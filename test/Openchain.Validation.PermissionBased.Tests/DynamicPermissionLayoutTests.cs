@@ -168,6 +168,11 @@ namespace Openchain.Validation.PermissionBased.Tests
 
             public void Dispose()
             { }
+
+            public Task<IReadOnlyList<ByteString>> GetTransactionByRecordKeys(IEnumerable<ByteString> keys)
+            {
+                throw new NotImplementedException();
+            }
         }
     }
 }

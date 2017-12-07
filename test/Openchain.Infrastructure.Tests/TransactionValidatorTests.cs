@@ -322,6 +322,11 @@ namespace Openchain.Infrastructure.Tests
 
             public void Dispose()
             { }
+
+            public Task<IReadOnlyList<ByteString>> GetTransactionByRecordKeys(IEnumerable<ByteString> keys)
+            {
+                throw new NotImplementedException();
+            }
         }
     }
 }

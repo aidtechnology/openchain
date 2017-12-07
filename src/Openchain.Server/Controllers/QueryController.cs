@@ -19,6 +19,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Openchain.Infrastructure;
+using System.Text;
 
 namespace Openchain.Server.Controllers
 {
@@ -231,6 +232,38 @@ namespace Openchain.Server.Controllers
 
             return Json(records.Select(GetRecordJson).ToArray());
         }
+
+
+        /// <summary>
+        /// Gets all the transactions by path.
+        /// </summary>
+        /// <param name="path">Records path</param>
+        /// <param name="format">The output format ("raw" or "json").</param>
+        /// <returns>The task object representing the asynchronous operation.</returns>
+        [HttpGet("GetTransactionsByPath")]
+        public async Task<ActionResult> GetTransactionsByPath(
+            [FromQuery(Name = "path")]
+            string path,
+            [FromQuery(Name = "format")]
+            string format = "raw")
+        {
+
+
+            LedgerPath ledgerPath;
+            if (!LedgerPath.TryParse(path, out ledgerPath))
+                return BadRequest();
+
+            var directory = LedgerPath.FromSegments(ledgerPath.Segments.ToArray());
+            var accounts = await this.store.GetSubaccounts(directory.FullPath);
+            var keys = accounts.Where(x => RecordKey.Parse(x.Key).RecordType == RecordType.Account).Select(x => x.Key);
+            var res = await this.storageEngine.GetTransactionByRecordKeys(keys);
+
+            if (format == "raw")
+                return Json(res.Select(result => result.ToString()).ToArray());
+            else
+                return Json(res.Select(result => TransactionToJson(result).Value).ToArray());
+        }
+
 
         private object GetAccountJson(AccountStatus account)
         {

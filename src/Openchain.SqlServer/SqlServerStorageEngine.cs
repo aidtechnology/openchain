@@ -189,6 +189,31 @@ namespace Openchain.SqlServer
                 });
         }
 
+        public async Task<IReadOnlyList<ByteString>> GetTransactionByRecordKeys(IEnumerable<ByteString> keys)
+        {
+            var keyList = new List<ByteString>(keys);
+
+            if (keyList.Count == 0)
+                return new ByteString[0];
+
+            var records = await ExecuteQuery(
+                "EXEC [Openchain].[GetTransactionByRecordKeys] @instance, @ids;",
+                reader => new ByteString((byte[])reader[0]),
+                new Dictionary<string, object>()
+                {
+                    ["instance"] = this.instanceId,
+                    ["type:ids"] = "Openchain.IdTable",
+                    ["ids"] = keyList.Select(key =>
+                    {
+                        SqlDataRecord record = new SqlDataRecord(idMetadata);
+                        record.SetBytes(0, 0, key.ToByteArray(), 0, key.Value.Count);
+                        return record;
+                    }).ToList()
+                });
+
+            return records;
+        }
+
         #endregion
 
         #region Dispose

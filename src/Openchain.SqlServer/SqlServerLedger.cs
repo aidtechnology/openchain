@@ -21,7 +21,7 @@ namespace Openchain.SqlServer
 {
     public class SqlServerLedger : SqlServerStorageEngine, ILedgerQueries, ILedgerIndexes
     {
-        private readonly int instanceId;
+        private readonly int instanceId; 
 
         public SqlServerLedger(string connectionString, int instanceId, TimeSpan commandTimeout)
             : base(connectionString, instanceId, commandTimeout)
@@ -92,5 +92,6 @@ namespace Openchain.SqlServer
         {
             return RecordKey.Parse(key);
         }
+
     }
 }
