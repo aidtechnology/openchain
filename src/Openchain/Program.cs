@@ -13,6 +13,7 @@ namespace Openchain
             .UseContentRoot(Directory.GetCurrentDirectory())
             .UseIISIntegration()
             .UseStartup<Startup>()
+            .UseUrls("http://*:5010")
             .Build()
             .Run();
     }
