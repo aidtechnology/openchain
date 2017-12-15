@@ -166,6 +166,11 @@ namespace Openchain.Infrastructure.Tests
                 throw new NotImplementedException();
             }
 
+            public Task<IReadOnlyList<ByteString>> GetTransactionByRecordKeys(IEnumerable<ByteString> keys)
+            {
+                throw new NotImplementedException();
+            }
+
             public Task<IReadOnlyList<ByteString>> GetTransactions(ByteString from) => Task.FromResult<IReadOnlyList<ByteString>>(transactions);
 
             public Task Initialize() => Task.FromResult(0);

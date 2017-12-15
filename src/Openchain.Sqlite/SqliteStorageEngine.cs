@@ -240,6 +240,11 @@ namespace Openchain.Sqlite
             }
         }
 
+        public Task<IReadOnlyList<ByteString>> GetTransactionByRecordKeys(IEnumerable<ByteString> keys)
+        {
+            throw new NotImplementedException();
+        }
+
         #endregion
     }
 }

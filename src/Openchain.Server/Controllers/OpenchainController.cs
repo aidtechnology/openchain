@@ -68,68 +68,76 @@ namespace Openchain.Server.Controllers
         [HttpPost("submit")]
         public async Task<ActionResult> Post()
         {
-            if (validator == null)
-                return CreateErrorResponse("ValidationDisabled");
-
-            JObject body;
             try
             {
-                string bodyContent;
-                using (StreamReader streamReader = new StreamReader(Request.Body))
-                    bodyContent = await streamReader.ReadToEndAsync();
+                if (validator == null)
+                    return CreateErrorResponse("ValidationDisabled");
 
-                body = JObject.Parse(bodyContent);
-            }
-            catch (JsonReaderException)
-            {
-                return BadRequest();
-            }
-
-            ByteString parsedMutation;
-            List<SignatureEvidence> authentication = new List<SignatureEvidence>();
-
-            if (!(body["mutation"] is JValue && body["signatures"] is JArray))
-                return BadRequest();
-
-            try
-            {
-                parsedMutation = ByteString.Parse((string)body["mutation"]);
-
-                foreach (JToken signatureItem in body["signatures"])
+                JObject body;
+                try
                 {
-                    JObject evidence = signatureItem as JObject;
-                    if (!(evidence != null && evidence["pub_key"] is JValue && evidence["signature"] is JValue))
-                        return BadRequest();
+                    string bodyContent;
+                    using (StreamReader streamReader = new StreamReader(Request.Body))
+                        bodyContent = await streamReader.ReadToEndAsync();
 
-                    authentication.Add(new SignatureEvidence(
-                        ByteString.Parse((string)evidence["pub_key"]),
-                        ByteString.Parse((string)evidence["signature"])));
+                    body = JObject.Parse(bodyContent);
                 }
-            }
-            catch (FormatException)
-            {
-                return BadRequest();
-            }
+                catch (JsonReaderException)
+                {
+                    return BadRequest();
+                }
 
-            ByteString transactionId;
-            try
-            {
-                transactionId = await validator.PostTransaction(parsedMutation, authentication);
+                ByteString parsedMutation;
+                List<SignatureEvidence> authentication = new List<SignatureEvidence>();
+
+                if (!(body["mutation"] is JValue && body["signatures"] is JArray))
+                    return BadRequest();
+
+                try
+                {
+                    parsedMutation = ByteString.Parse((string)body["mutation"]);
+
+                    foreach (JToken signatureItem in body["signatures"])
+                    {
+                        JObject evidence = signatureItem as JObject;
+                        if (!(evidence != null && evidence["pub_key"] is JValue && evidence["signature"] is JValue))
+                            return BadRequest();
+
+                        authentication.Add(new SignatureEvidence(
+                            ByteString.Parse((string)evidence["pub_key"]),
+                            ByteString.Parse((string)evidence["signature"])));
+                    }
+                }
+                catch (FormatException)
+                {
+                    return BadRequest();
+                }
+
+                ByteString transactionId;
+                try
+                {
+                    transactionId = await validator.PostTransaction(parsedMutation, authentication);
+                }
+                catch (TransactionInvalidException exception)
+                {
+                    logger.LogInformation("Rejected transaction: {0}", exception.Message);
+
+                    return CreateErrorResponse(exception.Reason);
+                }
+
+                logger.LogInformation("Validated transaction {0}", transactionId.ToString());
+
+                return Json(new
+                {
+                    transaction_hash = transactionId.ToString(),
+                    mutation_hash = new ByteString(MessageSerializer.ComputeHash(parsedMutation.ToByteArray())).ToString()
+                });
             }
-            catch (TransactionInvalidException exception)
+            catch (Exception ex)
             {
-                logger.LogInformation("Rejected transaction: {0}", exception.Message);
-
-                return CreateErrorResponse(exception.Reason);
+                var exep = ex;
+                throw;
             }
-
-            logger.LogInformation("Validated transaction {0}", transactionId.ToString());
-
-            return Json(new
-            {
-                transaction_hash = transactionId.ToString(),
-                mutation_hash = new ByteString(MessageSerializer.ComputeHash(parsedMutation.ToByteArray())).ToString()
-            });
         }
 
         private ActionResult CreateErrorResponse(string reason)
