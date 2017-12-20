@@ -20,6 +20,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Openchain.Infrastructure;
 using System.Text;
+using System.Collections;
 
 namespace Openchain.Server.Controllers
 {
@@ -233,38 +234,6 @@ namespace Openchain.Server.Controllers
             return Json(records.Select(GetRecordJson).ToArray());
         }
 
-
-        /// <summary>
-        /// Gets all the transactions by path.
-        /// </summary>
-        /// <param name="path">Records path</param>
-        /// <param name="format">The output format ("raw" or "json").</param>
-        /// <returns>The task object representing the asynchronous operation.</returns>
-        [HttpGet("GetTransactionsByPath")]
-        public async Task<ActionResult> GetTransactionsByPath(
-            [FromQuery(Name = "path")]
-            string path,
-            [FromQuery(Name = "format")]
-            string format = "raw")
-        {
-
-
-            LedgerPath ledgerPath;
-            if (!LedgerPath.TryParse(path, out ledgerPath))
-                return BadRequest();
-
-            var directory = LedgerPath.FromSegments(ledgerPath.Segments.ToArray());
-            var accounts = await this.store.GetSubaccounts(directory.FullPath);
-            var keys = accounts.Where(x => RecordKey.Parse(x.Key).RecordType == RecordType.Account).Select(x => x.Key);
-            var res = await this.storageEngine.GetTransactionByRecordKeys(keys);
-
-            if (format == "raw")
-                return Json(res.Select(result => result.ToString()).ToArray());
-            else
-                return Json(res.Select(result => TransactionToJson(result).Value).ToArray());
-        }
-
-
         private object GetAccountJson(AccountStatus account)
         {
             return new
@@ -295,6 +264,68 @@ namespace Openchain.Server.Controllers
                 context.Result = StatusCode(501);
                 context.ExceptionHandled = true;
             }
+        }
+
+
+        /// <summary>
+        /// Gets all the transactions by path.
+        /// </summary>
+        /// <param name="path">Records path</param>
+        /// <returns>The task object representing the asynchronous operation.</returns>
+        [HttpGet("GetTransactionsByPath")]
+        public async Task<ActionResult> GetTransactionsByPath(
+            [FromQuery(Name = "path")]
+            string path)
+        {
+            if (!LedgerPath.TryParse(path, out LedgerPath ledgerPath))
+                return BadRequest();
+
+            var directory = LedgerPath.FromSegments(ledgerPath.Segments.ToArray());
+            var accounts = await this.store.GetSubaccounts(directory.FullPath);
+            var keys = accounts.Where(x => RecordKey.Parse(x.Key).RecordType == RecordType.Account).Select(x => x.Key);
+            var transactionsData = await this.storageEngine.GetTransactionByRecordKeys(keys);
+
+            var transactions = transactionsData.Select(x => new ExtTransaction(x)).ToList();
+
+            var hashtable = new Hashtable();
+            foreach (var transaction in transactions)
+            {
+                foreach (var record in transaction.Mutation.Records)
+                {
+                    var val = BitConverter.ToInt64(record.Value.Value.Reverse().ToArray(), 0);
+                    hashtable.Add(transaction.MutationHash + record.Key.ToString(), val);
+                }
+            }
+
+            var res = transactions.Select(x => TransactionToJsonExt(x, hashtable).Value).ToArray();
+            return Json(res);
+        }
+
+        private JsonResult TransactionToJsonExt(ExtTransaction extTransaction, Hashtable hashtable)
+        {
+            var records = extTransaction.Mutation.Records.Select(x => RecordToJson(x, x.Version.ToString() + x.Key, hashtable)).ToArray();
+            var timestamp = extTransaction.Transaction.Timestamp.Subtract(new DateTime(1970, 1, 1)).TotalMilliseconds / 1000; //convert to Unix timestamp
+            return Json(new
+            {
+                transaction = new { timestamp = timestamp }, //TEMP //TODO: dateTime filter
+                timestamp = timestamp,
+                mutation = new { records },
+                mutationHash = extTransaction.MutationHash,
+                transactionHash = extTransaction.TransactionHash
+            });
+        }
+
+        private object RecordToJson(Record record, string key, Hashtable hashtable)
+        {
+            var value = BitConverter.ToInt64(record.Value.Value.Reverse().ToArray(), 0);
+            var prevVal = hashtable.ContainsKey(key) ? (long)hashtable[key] : 0;
+            return new
+            {
+                key = RecordKey.Parse(record.Key),
+                value = value,
+                version = record.Version.ToString(),
+                delta = value - prevVal
+            };
         }
     }
 }
