@@ -21,6 +21,9 @@ using Microsoft.AspNetCore.Mvc.Filters;
 using Openchain.Infrastructure;
 using System.Text;
 using System.Collections;
+using Newtonsoft.Json.Linq;
+using System.IO;
+using Newtonsoft.Json;
 
 namespace Openchain.Server.Controllers
 {
@@ -326,6 +329,69 @@ namespace Openchain.Server.Controllers
                 version = record.Version.ToString(),
                 delta = value - prevVal
             };
+        }
+        class TransactionFilter
+        {
+            public TransactionFilter(JObject jObject)
+            {
+                this.StartDate = (DateTime)jObject["start"];
+                this.EndDate = (DateTime)jObject["end"];
+            }
+
+            public bool IsValid(ExtTransaction extTransaction) {
+                var timestamp = extTransaction.Transaction.Timestamp;
+                return timestamp > StartDate && timestamp < EndDate;
+            }
+
+            public DateTime StartDate { get; set; }
+            public DateTime EndDate { get; set; }
+        }
+
+        //pp
+        [HttpPost("GetFilteredTransactions")]
+        public async Task<ActionResult> GetFilteredTransactions()
+        {
+            string path;
+            TransactionFilter filter;
+            JObject body;
+            try
+            {
+                string bodyContent;
+                using (StreamReader streamReader = new StreamReader(Request.Body))
+                    bodyContent = await streamReader.ReadToEndAsync();
+
+                body = JObject.Parse(bodyContent);
+                path = body["path"].ToString();
+                filter = new TransactionFilter((JObject)body["filter"]);
+            }
+            catch (JsonReaderException)
+            {
+                return BadRequest();
+            }
+
+
+            if (!LedgerPath.TryParse(path, out LedgerPath ledgerPath))
+                return BadRequest();
+
+            var directory = LedgerPath.FromSegments(ledgerPath.Segments.ToArray());
+            var accounts = await this.store.GetSubaccounts(directory.FullPath);
+            var keys = accounts.Where(x => RecordKey.Parse(x.Key).RecordType == RecordType.Account).Select(x => x.Key);
+            var transactionsData = await this.storageEngine.GetTransactionByRecordKeys(keys);
+
+            var transactions = transactionsData.Select(x => new ExtTransaction(x)).ToList();
+
+            var hashtable = new Hashtable();
+            foreach (var transaction in transactions)
+            {
+                foreach (var record in transaction.Mutation.Records)
+                {
+                    var val = BitConverter.ToInt64(record.Value.Value.Reverse().ToArray(), 0);
+                    hashtable.Add(transaction.MutationHash + record.Key.ToString(), val);
+                }
+            }
+
+            var res = transactions.Where(x => filter.IsValid(x)).Select(x => TransactionToJsonExt(x, hashtable).Value).ToArray();
+            return Json(res);
         }
     }
 }
