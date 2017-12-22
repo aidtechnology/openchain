@@ -36,9 +36,9 @@ AS
     DECLARE @insertedIds TABLE (TransactionId BIGINT);
 
     INSERT INTO [Openchain].[Transactions]
-    ([Instance], [TransactionHash], [MutationHash], [RawData])
+    ([Instance], [TransactionHash], [MutationHash], [RawData], [Created])
     OUTPUT Inserted.[Id] INTO @insertedIds
-    VALUES (@instance, @transactionHash, @mutationHash, @rawData);
+    VALUES (@instance, @transactionHash, @mutationHash, @rawData, GETDATE());
 
     DECLARE @transactionId AS BIGINT;
     SELECT TOP(1) @transactionId = [TransactionId] FROM @insertedIds;

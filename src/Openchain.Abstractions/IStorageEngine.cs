@@ -58,6 +58,10 @@ namespace Openchain
         /// <returns>The task object representing the asynchronous operation.</returns>
         Task<IReadOnlyList<ByteString>> GetTransactions(ByteString from);
 
-        Task<IReadOnlyList<ByteString>> GetTransactionByRecordKeys(IEnumerable<ByteString> keys);
+        Task<IReadOnlyList<ByteString>> GetTransactionByRecordKeys(IEnumerable<ByteString> keys, TransactionFilter filter);
+
+        Task<int> UpdateTransactionsDate();
+
+        Task<IReadOnlyList<ByteString>>  GetTransactionsByMutationHash(IEnumerable<ByteString> mutationHashes);
     }
 }
