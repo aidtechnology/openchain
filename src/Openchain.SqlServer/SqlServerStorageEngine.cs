@@ -206,7 +206,7 @@ namespace Openchain.SqlServer
                 });
         }
 
-        public async Task<IReadOnlyList<ByteString>> GetTransactionByRecordKeys(IEnumerable<ByteString> keys)
+        public async Task<IReadOnlyList<ByteString>> GetTransactionByRecordKeys(IEnumerable<ByteString> keys, TransactionFilter filter)
         {
             var keyList = new List<ByteString>(keys);
 
@@ -214,13 +214,40 @@ namespace Openchain.SqlServer
                 return new ByteString[0];
 
             var records = await ExecuteQuery(
-                "EXEC [Openchain].[GetTransactionByRecordKeys] @instance, @ids;",
+                "EXEC [Openchain].[GetTransactionByRecordKeys1] @instance, @ids, @start, @end;",
                 reader => new ByteString((byte[])reader[0]),
                 new Dictionary<string, object>()
                 {
                     ["instance"] = this.instanceId,
                     ["type:ids"] = "Openchain.IdTable",
                     ["ids"] = keyList.Select(key =>
+                    {
+                        SqlDataRecord record = new SqlDataRecord(idMetadata);
+                        record.SetBytes(0, 0, key.ToByteArray(), 0, key.Value.Count);
+                        return record;
+                    }).ToList(),
+                    ["start"] = filter.StartDate,
+                    ["end"] = filter.EndDate
+                });
+
+            return records;
+        }
+
+        public async Task<IReadOnlyList<ByteString>>  GetTransactionsByMutationHash(IEnumerable<ByteString> mutationHashes)
+        {
+            var hashList = new List<ByteString>(mutationHashes);
+
+            if (hashList.Count == 0)
+                return new ByteString[0];
+
+            var records = await ExecuteQuery(
+                "EXEC [Openchain].[GetTransactions] @instance, @mutationHashes;",
+                reader => new ByteString((byte[])reader[0]),
+                new Dictionary<string, object>()
+                {
+                    ["instance"] = this.instanceId,
+                    ["type:mutationHashes"] = "Openchain.IdTable",
+                    ["mutationHashes"] = hashList.Select(key =>
                     {
                         SqlDataRecord record = new SqlDataRecord(idMetadata);
                         record.SetBytes(0, 0, key.ToByteArray(), 0, key.Value.Count);
@@ -286,5 +313,71 @@ namespace Openchain.SqlServer
         }
 
         #endregion
+
+
+
+
+        //TEMP
+        public async Task<int> UpdateTransactionsDate()
+        {
+            using (SqlTransaction context = Connection.BeginTransaction(IsolationLevel.Snapshot))
+            {
+                try
+                {
+                    var transactionsData = await ExecuteQuery(
+                        @"IF NOT EXISTS(SELECT * FROM INFORMATION_SCHEMA.COLUMNS
+                            WHERE TABLE_NAME = 'Transactions' AND COLUMN_NAME = 'Created')
+                        BEGIN
+                            ALTER TABLE [Openchain].[Transactions] ADD 
+                                Created datetime
+                        END
+                        SELECT [RawData] 
+                        FROM [Openchain].[Transactions] 
+                        WHERE [Created] IS NULL",
+                        reader => new ByteString((byte[])reader[0]),
+                        new Dictionary<string, object>(),
+                        context);
+
+                    var transactions = transactionsData.Select(x => new ExtTransaction(x)).ToList();
+
+                    foreach (ExtTransaction extTransaction in transactions)
+                    {
+                        byte[] rawTransactionBuffer = extTransaction.TransactionData.ToByteArray();
+                        byte[] transactionHash = MessageSerializer.ComputeHash(rawTransactionBuffer);
+                        byte[] mutationHash = MessageSerializer.ComputeHash(extTransaction.Transaction.Mutation.ToByteArray());
+
+                        IReadOnlyList<object> conflicts = await ExecuteQuery(
+                            "UPDATE [Openchain].[Transactions] SET[Created] = @created WHERE[MutationHash] = @mutationHash  AND [TransactionHash] = @transactionHash",
+                            reader => reader
+                            ,
+                            new Dictionary<string, object>()
+                            {
+                                ["mutationHash"] = mutationHash,
+                                ["transactionHash"] = transactionHash,
+                                ["created"] = extTransaction.Transaction.Timestamp
+                            },
+                            context);
+
+                        if (conflicts.Count > 0)
+                            throw new Exception();
+                    }
+
+                    context.Commit();
+
+                    return transactions.Count;
+                }
+                catch (Exception ex)
+                {
+                    if (!(ex is ConcurrentMutationException))
+                    {
+                        var excep = ex;
+                    }
+
+                    throw;
+                }
+            }
+
+        }
+
     }
 }
