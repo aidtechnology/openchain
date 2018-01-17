@@ -1,0 +1,18 @@
+# Ignore irrelevant files and directories to ensure small Docker images (Docker context size reduction)
+
+# Git related
+.git*
+
+# Development dirs
+test
+tools
+
+# Development files
+global.json
+LICENSE
+Openchain.sln
+README.md
+Dockerfile
+
+# Temporary files
+.DS_Store
