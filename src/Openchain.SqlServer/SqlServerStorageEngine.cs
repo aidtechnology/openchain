@@ -20,11 +20,13 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.SqlServer.Server;
 using Openchain.Infrastructure;
+using Nito.AsyncEx;
 
 namespace Openchain.SqlServer
 {
     public class SqlServerStorageEngine : IStorageEngine
     {
+        private static readonly AsyncLock m_lock = new AsyncLock();
         private static readonly int transactionPageCount = 5;
         private static readonly RecordKey defaultRecordKey = new RecordKey((RecordType)0, LedgerPath.FromSegments(), "");
         private readonly int instanceId;
@@ -65,52 +67,67 @@ namespace Openchain.SqlServer
 
         public async Task AddTransactions(IEnumerable<ByteString> transactions)
         {
-            using (SqlTransaction context = Connection.BeginTransaction(IsolationLevel.Snapshot))
+            using (await m_lock.LockAsync())
             {
-                foreach (ByteString rawTransaction in transactions)
+                using (SqlTransaction context = Connection.BeginTransaction(IsolationLevel.Snapshot))
                 {
-                    byte[] rawTransactionBuffer = rawTransaction.ToByteArray();
-                    Transaction transaction = MessageSerializer.DeserializeTransaction(rawTransaction);
-                    byte[] transactionHash = MessageSerializer.ComputeHash(rawTransactionBuffer);
-
-                    byte[] mutationHash = MessageSerializer.ComputeHash(transaction.Mutation.ToByteArray());
-                    Mutation mutation = MessageSerializer.DeserializeMutation(transaction.Mutation);
-
-                    IReadOnlyList<Record> conflicts = await ExecuteQuery<Record>(
-                        "EXEC [Openchain].[AddTransaction] @instance, @transactionHash, @mutationHash, @rawData, @records;",
-                        reader => mutation.Records.First(record => record.Key.Equals(new ByteString((byte[])reader[0]))),
-                        new Dictionary<string, object>()
+                    try
+                    {
+                        foreach (ByteString rawTransaction in transactions)
                         {
-                            ["instance"] = this.instanceId,
-                            ["transactionHash"] = transactionHash,
-                            ["mutationHash"] = mutationHash,
-                            ["rawData"] = rawTransactionBuffer,
-                            ["type:records"] = "Openchain.RecordMutationTable",
-                            ["records"] = mutation.Records.Select(record =>
-                            {
-                                SqlDataRecord result = new SqlDataRecord(recordMutationMetadata);
+                            byte[] rawTransactionBuffer = rawTransaction.ToByteArray();
+                            Transaction transaction = MessageSerializer.DeserializeTransaction(rawTransaction);
+                            byte[] transactionHash = MessageSerializer.ComputeHash(rawTransactionBuffer);
 
-                                RecordKey key = ParseRecordKey(record.Key);
-                                result.SetBytes(0, 0, record.Key.ToByteArray(), 0, record.Key.Value.Count);
+                            byte[] mutationHash = MessageSerializer.ComputeHash(transaction.Mutation.ToByteArray());
+                            Mutation mutation = MessageSerializer.DeserializeMutation(transaction.Mutation);
 
-                                if (record.Value == null)
-                                    result.SetDBNull(1);
-                                else
-                                    result.SetBytes(1, 0, record.Value.ToByteArray(), 0, record.Value.Value.Count);
+                            IReadOnlyList<Record> conflicts = await ExecuteQuery<Record>(
+                                "EXEC [Openchain].[AddTransaction] @instance, @transactionHash, @mutationHash, @rawData, @records;",
+                                reader => mutation.Records.First(record => record.Key.Equals(new ByteString((byte[])reader[0]))),
+                                new Dictionary<string, object>()
+                                {
+                                    ["instance"] = this.instanceId,
+                                    ["transactionHash"] = transactionHash,
+                                    ["mutationHash"] = mutationHash,
+                                    ["rawData"] = rawTransactionBuffer,
+                                    ["type:records"] = "Openchain.RecordMutationTable",
+                                    ["records"] = mutation.Records.Select(record =>
+                                    {
+                                        SqlDataRecord result = new SqlDataRecord(recordMutationMetadata);
 
-                                result.SetBytes(2, 0, record.Version.ToByteArray(), 0, record.Version.Value.Count);
-                                result.SetString(3, key.Name);
-                                result.SetByte(4, (byte)key.RecordType);
-                                return result;
-                            }).ToList()
-                        },
-                        context);
+                                        RecordKey key = ParseRecordKey(record.Key);
+                                        result.SetBytes(0, 0, record.Key.ToByteArray(), 0, record.Key.Value.Count);
 
-                    if (conflicts.Count > 0)
-                        throw new ConcurrentMutationException(conflicts[0]);
+                                        if (record.Value == null)
+                                            result.SetDBNull(1);
+                                        else
+                                            result.SetBytes(1, 0, record.Value.ToByteArray(), 0, record.Value.Value.Count);
+
+                                        result.SetBytes(2, 0, record.Version.ToByteArray(), 0, record.Version.Value.Count);
+                                        result.SetString(3, key.Name);
+                                        result.SetByte(4, (byte)key.RecordType);
+                                        return result;
+                                    }).ToList()
+                                },
+                                context);
+
+                            if (conflicts.Count > 0)
+                                throw new ConcurrentMutationException(conflicts[0]);
+                        }
+
+                        context.Commit();
+                    }
+                    catch (Exception ex)
+                    {
+                        if (!(ex is ConcurrentMutationException))
+                        {
+                            var excep = ex;
+                        }
+
+                        throw;
+                    }
                 }
-
-                context.Commit();
             }
         }
 
@@ -189,6 +206,58 @@ namespace Openchain.SqlServer
                 });
         }
 
+        public async Task<IReadOnlyList<ByteString>> GetTransactionByRecordKeys(IEnumerable<ByteString> keys, TransactionFilter filter)
+        {
+            var keyList = new List<ByteString>(keys);
+
+            if (keyList.Count == 0)
+                return new ByteString[0];
+
+            var records = await ExecuteQuery(
+                "EXEC [Openchain].[GetTransactionByRecordKeys1] @instance, @ids, @start, @end;",
+                reader => new ByteString((byte[])reader[0]),
+                new Dictionary<string, object>()
+                {
+                    ["instance"] = this.instanceId,
+                    ["type:ids"] = "Openchain.IdTable",
+                    ["ids"] = keyList.Select(key =>
+                    {
+                        SqlDataRecord record = new SqlDataRecord(idMetadata);
+                        record.SetBytes(0, 0, key.ToByteArray(), 0, key.Value.Count);
+                        return record;
+                    }).ToList(),
+                    ["start"] = filter.StartDate,
+                    ["end"] = filter.EndDate
+                });
+
+            return records;
+        }
+
+        public async Task<IReadOnlyList<ByteString>>  GetTransactionsByMutationHash(IEnumerable<ByteString> mutationHashes)
+        {
+            var hashList = new List<ByteString>(mutationHashes);
+
+            if (hashList.Count == 0)
+                return new ByteString[0];
+
+            var records = await ExecuteQuery(
+                "EXEC [Openchain].[GetTransactions] @instance, @mutationHashes;",
+                reader => new ByteString((byte[])reader[0]),
+                new Dictionary<string, object>()
+                {
+                    ["instance"] = this.instanceId,
+                    ["type:mutationHashes"] = "Openchain.IdTable",
+                    ["mutationHashes"] = hashList.Select(key =>
+                    {
+                        SqlDataRecord record = new SqlDataRecord(idMetadata);
+                        record.SetBytes(0, 0, key.ToByteArray(), 0, key.Value.Count);
+                        return record;
+                    }).ToList()
+                });
+
+            return records;
+        }
+
         #endregion
 
         #region Dispose
@@ -244,5 +313,71 @@ namespace Openchain.SqlServer
         }
 
         #endregion
+
+
+
+
+        //TEMP
+        public async Task<int> UpdateTransactionsDate()
+        {
+            using (SqlTransaction context = Connection.BeginTransaction(IsolationLevel.Snapshot))
+            {
+                try
+                {
+                    var transactionsData = await ExecuteQuery(
+                        @"IF NOT EXISTS(SELECT * FROM INFORMATION_SCHEMA.COLUMNS
+                            WHERE TABLE_NAME = 'Transactions' AND COLUMN_NAME = 'Created')
+                        BEGIN
+                            ALTER TABLE [Openchain].[Transactions] ADD 
+                                Created datetime
+                        END
+                        SELECT [RawData] 
+                        FROM [Openchain].[Transactions] 
+                        WHERE [Created] IS NULL",
+                        reader => new ByteString((byte[])reader[0]),
+                        new Dictionary<string, object>(),
+                        context);
+
+                    var transactions = transactionsData.Select(x => new ExtTransaction(x)).ToList();
+
+                    foreach (ExtTransaction extTransaction in transactions)
+                    {
+                        byte[] rawTransactionBuffer = extTransaction.TransactionData.ToByteArray();
+                        byte[] transactionHash = MessageSerializer.ComputeHash(rawTransactionBuffer);
+                        byte[] mutationHash = MessageSerializer.ComputeHash(extTransaction.Transaction.Mutation.ToByteArray());
+
+                        IReadOnlyList<object> conflicts = await ExecuteQuery(
+                            "UPDATE [Openchain].[Transactions] SET[Created] = @created WHERE[MutationHash] = @mutationHash  AND [TransactionHash] = @transactionHash",
+                            reader => reader
+                            ,
+                            new Dictionary<string, object>()
+                            {
+                                ["mutationHash"] = mutationHash,
+                                ["transactionHash"] = transactionHash,
+                                ["created"] = extTransaction.Transaction.Timestamp
+                            },
+                            context);
+
+                        if (conflicts.Count > 0)
+                            throw new Exception();
+                    }
+
+                    context.Commit();
+
+                    return transactions.Count;
+                }
+                catch (Exception ex)
+                {
+                    if (!(ex is ConcurrentMutationException))
+                    {
+                        var excep = ex;
+                    }
+
+                    throw;
+                }
+            }
+
+        }
+
     }
 }
