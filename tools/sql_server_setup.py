@@ -1,5 +1,9 @@
 #! /usr/bin/env python
 
+# For this to work, you will need to install pyodbc
+# Also install the ODBC driver, you may need to follow these instructions:
+# https://docs.microsoft.com/en-us/sql/connect/odbc/linux-mac/installing-the-microsoft-odbc-driver-for-sql-server
+
 import argparse
 import os
 from collections import OrderedDict
