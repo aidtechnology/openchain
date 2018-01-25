@@ -5,6 +5,7 @@
     [TransactionHash] BINARY(32) NOT NULL,
     [MutationHash] BINARY(32) NOT NULL,
     [RawData] VARBINARY(MAX) NOT NULL,
+	[Created] DATETIME,
 
     CONSTRAINT [PK_Transactions]
     PRIMARY KEY ([Id]),

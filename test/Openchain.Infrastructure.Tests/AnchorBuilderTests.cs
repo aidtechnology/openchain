@@ -166,9 +166,24 @@ namespace Openchain.Infrastructure.Tests
                 throw new NotImplementedException();
             }
 
+            public Task<IReadOnlyList<ByteString>> GetTransactionByRecordKeys(IEnumerable<ByteString> keys, TransactionFilter filter)
+            {
+                throw new NotImplementedException();
+            }
+
             public Task<IReadOnlyList<ByteString>> GetTransactions(ByteString from) => Task.FromResult<IReadOnlyList<ByteString>>(transactions);
 
             public Task Initialize() => Task.FromResult(0);
+
+            public Task<int> UpdateTransactionsDate()
+            {
+                throw new NotImplementedException();
+            }
+
+            Task<IReadOnlyList<ByteString>> IStorageEngine.GetTransactionsByMutationHash(IEnumerable<ByteString> mutationHashes)
+            {
+                throw new NotImplementedException();
+            }
         }
 
         public class TestAnchorRecorder : IAnchorRecorder

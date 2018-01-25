@@ -54,5 +54,7 @@ namespace Openchain
         /// Gets the version of the record.
         /// </summary>
         public ByteString Version { get; }
+
+        public ByteString Delta { get; set; }
     }
 }

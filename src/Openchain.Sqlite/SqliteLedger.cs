@@ -123,5 +123,6 @@ namespace Openchain.Sqlite
                     ["@type"] = (byte)type
                 });
         }
+
     }
 }

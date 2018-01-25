@@ -160,3 +160,4 @@ $RECYCLE.BIN/
 
 # Other files
 /ColorExplorer/ColorExplorer.Web/App_Data/version.txt
+.vs/

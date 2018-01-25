@@ -22,6 +22,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Openchain.Infrastructure;
 using Openchain.Server.Models;
+using Swashbuckle.AspNetCore.Swagger;
 
 namespace Openchain.Server
 {
@@ -60,6 +61,7 @@ namespace Openchain.Server
             // Setup ASP.NET MVC
             services
                 .AddMvcCore()
+                .AddApiExplorer()
                 .AddViews()
                 .AddJsonFormatters();
 
@@ -93,6 +95,12 @@ namespace Openchain.Server
 
             // Anchoring
             services.AddSingleton<LedgerAnchorWorker>(ConfigurationParser.CreateLedgerAnchorWorker);
+
+            // Register the Swagger generator, defining one or more Swagger documents
+            services.AddSwaggerGen(c =>
+            {
+                c.SwaggerDoc("v1", new Info { Title = "Aid:Tech Openchain", Version = "v1" });
+            });
         }
 
         private static void LogStartup(ILogger logger, IHostingEnvironment environment)
@@ -120,6 +128,17 @@ namespace Openchain.Server
                     managedWebSocketsApp.Use(next => new TransactionStreamMiddleware(next).Invoke);
                 }
             });
+
+
+            // Enable middleware to serve generated Swagger as a JSON endpoint.
+            app.UseSwagger();
+
+            // Enable middleware to serve swagger-ui (HTML, JS, CSS, etc.), specifying the Swagger JSON endpoint.
+            app.UseSwaggerUI(c =>
+            {
+                c.SwaggerEndpoint("/swagger/v1/swagger.json", "Openchain API");
+            });
+
 
             // Add MVC to the request pipeline.
             app.UseMvc();

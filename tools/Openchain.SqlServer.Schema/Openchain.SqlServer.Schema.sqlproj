@@ -79,5 +79,6 @@
     <Build Include="Tables\RecordMutations.sql" />
     <Build Include="Types\IdTable.sql" />
     <Build Include="Types\RecordMutationTable.sql" />
+    <Build Include="Stored Procedures\GetTransactionByRecordKeys.sql" />
   </ItemGroup>
 </Project>
