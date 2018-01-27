@@ -1,4 +1,4 @@
-FROM microsoft/dotnet:1.1-sdk-projectjson
+FROM microsoft/dotnet:2.0.5-sdk-2.1.4-jessie
 
 RUN mkdir -p /openchain
 
