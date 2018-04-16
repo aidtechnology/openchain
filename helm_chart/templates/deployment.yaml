@@ -19,14 +19,21 @@ spec:
         app: {{ template "openchain.name" . }}
         release: {{ .Release.Name }}
     spec:
+      volumes:
+        - name: config
+          secret:
+            secretName: {{ .Values.deployment.config_secret }}
       containers:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
-            - name: http
-              containerPort: 80
+            - name: openchain
+              containerPort: 8080
               protocol: TCP
+          volumeMounts:
+            - mountPath: /openchain/Openchain/data
+              name: config
           livenessProbe:
             httpGet:
               path: /

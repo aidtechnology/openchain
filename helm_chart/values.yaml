@@ -5,24 +5,27 @@
 replicaCount: 1
 
 image:
-  repository: nginx
-  tag: stable
+  repository: aidtechocreg.azurecr.io/openchain
+  tag: latest
   pullPolicy: IfNotPresent
+
+deployment:
+  config_secret: openchain--config
 
 service:
   type: ClusterIP
   port: 80
 
 ingress:
-  enabled: false
-  annotations: {}
-    # kubernetes.io/ingress.class: nginx
-    # kubernetes.io/tls-acme: "true"
+  enabled: true
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    #certmanager.k8s.io/cluster-issuer: "letsencrypt-production"
   path: /
   hosts:
     - chart-example.local
   tls: []
-  #  - secretName: chart-example-tls
+  #  - secretName: openchain--tls
   #    hosts:
   #      - chart-example.local
 
