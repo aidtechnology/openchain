@@ -35,13 +35,16 @@ spec:
             - mountPath: /openchain/Openchain/data
               name: config
           livenessProbe:
-            httpGet:
-              path: /
-              port: http
+            exec:
+              command:
+              - ls
+              - /openchain/
+            initialDelaySeconds: 5
+            periodSeconds: 5
           readinessProbe:
             httpGet:
-              path: /
-              port: http
+              path: /info
+              port: openchain
           resources:
 {{ toYaml .Values.resources | indent 12 }}
     {{- with .Values.nodeSelector }}
