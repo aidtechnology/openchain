@@ -68,7 +68,8 @@ def main(args):
     sql_files['Stored Procedures'] = [
         'AddTransaction.sql', 'GetAllRecords.sql', 'GetLastTransaction.sql',
         'GetRecordMutations.sql', 'GetRecordRange.sql', 'GetRecords.sql',
-        'GetTransaction.sql', 'GetTransactionLog.sql', 'GetTransactionByRecordKeys.sql']
+        'GetTransaction.sql', 'GetTransactions.sql', 'GetTransactionLog.sql',
+        'GetTransactionByRecordKeys.sql', 'GetTransactionByRecordKeys1.sql']
 
     for path, files in sql_files.items():
         for file in files:
